@@ -54,11 +54,16 @@ class mrulz(Scraper):
             url = url + search_text
 
         html = client.request(url, headers=self.hdr)
+        self.log('[MRULZ] Requested URL: %s' % url)
+        self.log('[MRULZ] HTML response length: %d' % len(html) if html else 0)
+        
         mlink = SoupStrainer('div', {'id': 'content'})
         mdiv = BeautifulSoup(html, "html.parser", parse_only=mlink)
         plink = SoupStrainer('nav', {'id': 'posts-nav'})
         Paginator = BeautifulSoup(html, "html.parser", parse_only=plink)
         items = mdiv.find_all('div', {'class': 'boxed film'})
+        
+        self.log('[MRULZ] Found %d items' % len(items))
 
         for item in items:
             title = self.unescape(item.text)
