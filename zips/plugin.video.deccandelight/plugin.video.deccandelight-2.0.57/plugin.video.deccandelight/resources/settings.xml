@@ -15,13 +15,13 @@
 		<setting id="fs_timeout" visible="eq(-2,true)" enable="eq(-2,true)" type="slider" label="Flaresolverr Timeout" default="60" range="30,30,180" option="int" />
 		<setting id="cs_enable" visible="eq(-3,false)" type="bool" label="Enable CF-clearance-scraper" default="false" />
 		<setting id="cs_url" visible="eq(-1,true)" enable="eq(-1,true)" type="text" label="CF-clearance-scraper URL" default="http://localhost:3001" />
-	<category label="Mirror sites" />
+	</category>
+	<category label="Mirror sites">
 		<setting id="mirror" type="bool" label="Use Mirror sites for India" default="false"/>
 	</category>
 	<category label="Movie Rulz Settings">
 		<setting id="mrulz_domain" type="text" label="Movie Rulz Domain URL" default="https://www.5movierulz.claims" enable="true"/>
 		<setting type="lsep" label="Note: Change domain if current one is not working" />
-	</category>
 	</category>
 	<category label="Tamil Scrapers">
 		<setting id="tgun" type="bool" label="Tamil Gun" default="true"/>
