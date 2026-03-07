@@ -58,13 +58,22 @@ class mrulz(Scraper):
             url = url + search_text
             self.log('[MRULZ] get_items: Search query detected, updated URL: %s' % url)
 
-        self.log('[MRULZ] get_items: Making HTTP request...')
+        self.log('[MRULZ] get_items: Making HTTP request with cert verification...')
         html = client.request(url, headers=self.hdr)
         self.log('[MRULZ] get_items: HTTP request completed')
         self.log('[MRULZ] get_items: HTML response length: %d bytes' % len(html) if html else 'None')
         
+        # If standard request returns empty, try with SSL verification disabled
+        # This handles misconfigured SSL certs on some mirror domains
         if not html:
-            self.log('[MRULZ] get_items: ERROR - No HTML received from server!')
+            self.log('[MRULZ] get_items: First attempt returned empty, retrying with SSL verification disabled...')
+            hdr_no_verify = dict(self.hdr)
+            hdr_no_verify['verifypeer'] = 'false'
+            html = client.request(url, headers=hdr_no_verify)
+            self.log('[MRULZ] get_items: Second attempt response length: %d bytes' % len(html) if html else 'None')
+        
+        if not html:
+            self.log('[MRULZ] get_items: ERROR - No HTML received from server after 2 attempts!')
             return (movies, 8)
         
         self.log('[MRULZ] get_items: Parsing HTML with BeautifulSoup...')
