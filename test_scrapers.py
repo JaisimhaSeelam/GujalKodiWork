@@ -11,7 +11,7 @@ from bs4 import BeautifulSoup, SoupStrainer
 
 def test_mrulz_endpoint():
     """Test if mrulz endpoint is reachable and has expected structure"""
-    url = 'https://www.5movierulz.travel/category/tamil-movie/'
+    url = 'https://www.5movierulz.claims/category/tamil-movie/'
     
     print("\n" + "="*60)
     print("Testing Movie Rulz Scraper")
@@ -21,9 +21,10 @@ def test_mrulz_endpoint():
     try:
         # Test connectivity
         print("\n[1/3] Testing endpoint connectivity...")
-        response = requests.get(url, timeout=10, headers={
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-        })
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+        }
+        response = requests.get(url, timeout=10, headers=headers)
         response.raise_for_status()
         print("✓ Endpoint is reachable")
         
