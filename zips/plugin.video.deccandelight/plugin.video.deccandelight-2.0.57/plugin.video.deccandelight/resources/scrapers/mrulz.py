@@ -26,7 +26,10 @@ from six.moves import urllib_parse
 class mrulz(Scraper):
     def __init__(self):
         Scraper.__init__(self)
-        self.bu = 'https://www.5movierulz.claims/category/'
+        # Read domain from addon settings, default to .claims
+        default_domain = 'https://www.5movierulz.claims'
+        domain = self.settings('mrulz_domain') or default_domain
+        self.bu = domain + '/category/'
         self.icon = self.ipath + 'mrulz.png'
         self.log('[MRULZ] __init__: Base URL set to: %s' % self.bu)
         self.log('[MRULZ] __init__: Icon path: %s' % self.icon)
@@ -58,22 +61,27 @@ class mrulz(Scraper):
             url = url + search_text
             self.log('[MRULZ] get_items: Search query detected, updated URL: %s' % url)
 
+        # Build headers with Cloudflare-friendly settings
+        hdr = dict(self.hdr)
+        hdr['Referer'] = self.bu
+        
         self.log('[MRULZ] get_items: Making HTTP request with cert verification...')
-        html = client.request(url, headers=self.hdr)
+        html = client.request(url, headers=hdr)
         self.log('[MRULZ] get_items: HTTP request completed')
         self.log('[MRULZ] get_items: HTML response length: %d bytes' % len(html) if html else 'None')
         
         # If standard request returns empty, try with SSL verification disabled
-        # This handles misconfigured SSL certs on some mirror domains
+        # This handles misconfigured SSL certs and Cloudflare challenges
         if not html:
             self.log('[MRULZ] get_items: First attempt returned empty, retrying with SSL verification disabled...')
-            hdr_no_verify = dict(self.hdr)
+            hdr_no_verify = dict(hdr)
             hdr_no_verify['verifypeer'] = 'false'
             html = client.request(url, headers=hdr_no_verify)
             self.log('[MRULZ] get_items: Second attempt response length: %d bytes' % len(html) if html else 'None')
         
         if not html:
             self.log('[MRULZ] get_items: ERROR - No HTML received from server after 2 attempts!')
+            self.log('[MRULZ] get_items: This may be due to Cloudflare bot detection or domain blocking.')
             return (movies, 8)
         
         self.log('[MRULZ] get_items: Parsing HTML with BeautifulSoup...')
