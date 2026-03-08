@@ -27,7 +27,7 @@ class mrulz(Scraper):
     def __init__(self):
         Scraper.__init__(self)
         # Read domain from addon settings, default to .claims
-        default_domain = 'https://www.5movierulz.claims'
+        default_domain = 'https://www.5movierulz.viajes/'
         domain = self.settings('mrulz_domain') or default_domain
         self.bu = domain + '/category/'
         self.icon = self.ipath + 'mrulz.png'
