@@ -51,8 +51,7 @@ class cinevez(Scraper):
         html = client.request(url)
         mlink = SoupStrainer('div', {'class': re.compile('^main')})
         mdiv = BeautifulSoup(html, "html.parser", parse_only=mlink)
-        plink = SoupStrainer('nav')
-        Paginator = BeautifulSoup(html, "html.parser", parse_only=plink)
+        soup = BeautifulSoup(html, "html.parser")
         items = mdiv.find_all('div', {'class': 'post-item'})
 
         for item in items:
@@ -65,10 +64,41 @@ class cinevez(Scraper):
                 thumb = self.icon
             movies.append((title, thumb, url))
 
-        if 'next' in str(Paginator):
-            purl = Paginator.find('a', {'class': 'next'}).get('href')
-            currpg = Paginator.find('a', {'class': 'bg-primary'}).text
-            lastpg = Paginator.find_all('a', {'class': 'page-numbers'})[-2].text
+        paginator = soup.find('div', {'class': re.compile(r'\bpagination\b')})
+        if not paginator:
+            paginator = soup.find('div', {'class': re.compile(r'\bwp-pagenavi\b')})
+        if not paginator:
+            paginator = soup.find('nav')
+
+        next_link = None
+        if paginator:
+            next_link = paginator.find('a', {'rel': 'next'})
+            if not next_link:
+                next_link = paginator.find('a', {'class': re.compile(r'\b(next|nextpostslink)\b')})
+            if not next_link:
+                next_link = paginator.find('a', string=re.compile(r'(Next|Older|»)', re.I))
+
+        if not next_link:
+            next_link = soup.find('a', {'rel': 'next'})
+        if not next_link:
+            next_link = soup.find('a', string=re.compile(r'(Next|Older|»)', re.I))
+
+        if next_link and next_link.get('href'):
+            purl = next_link.get('href')
+            currpg = '1'
+            curr = paginator.find(['a', 'span'], {'class': re.compile(r'(bg-primary|current)')}) if paginator else None
+            if curr and curr.text:
+                currpg = curr.text.strip()
+            else:
+                m = re.search(r'/page/(\d+)', url)
+                if m:
+                    currpg = m.group(1)
+
+            lastpg = '?'
+            if paginator:
+                nums = paginator.find_all('a', {'class': re.compile(r'page-numbers')})
+                if len(nums) >= 2:
+                    lastpg = nums[-2].text.strip()
             title = 'Next Page.. (Currently in Page {0} of {1})'.format(currpg, lastpg)
             movies.append((title, self.nicon, purl))
 
