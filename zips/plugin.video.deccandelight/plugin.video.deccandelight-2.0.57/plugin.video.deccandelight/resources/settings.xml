@@ -20,8 +20,11 @@
 		<setting id="mirror" type="bool" label="Use Mirror sites for India" default="false"/>
 	</category>
 	<category label="Movie Rulz Settings">
-		<setting id="mrulz_domain" type="text" label="Movie Rulz Domain URL" default="https://www.5movierulz.claims" enable="true"/>
-		<setting type="lsep" label="Note: Change domain if current one is not working" />
+		<setting id="mrulz_domain" type="text" label="Movie Rulz Domain URL" default="https://www.5movierulz.viajes" enable="true"/>
+		<setting type="lsep" label="Note: Try alternatives if current one fails:" />
+		<setting type="lsep" label="- https://www.5movierulz.claims" />
+		<setting type="lsep" label="- https://www.5movierulz.travel" />
+		<setting type="lsep" label="- https://www.4movierulz.ph" />
 	</category>
 	<category label="Tamil Scrapers">
 		<setting id="tgun" type="bool" label="Tamil Gun" default="true"/>

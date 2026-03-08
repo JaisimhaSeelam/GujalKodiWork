@@ -25,10 +25,18 @@ from six.moves import urllib_parse, urllib_request, urllib_error
 
 
 class mrulz(Scraper):
+    # List of alternative domains to try if main domain fails
+    KNOWN_DOMAINS = [
+        'https://www.5movierulz.viajes',
+        'https://www.5movierulz.claims',
+        'https://www.5movierulz.travel',
+        'https://www.4movierulz.ph'
+    ]
+    
     def __init__(self):
         Scraper.__init__(self)
-        # Read domain from addon settings, default to .claims
-        default_domain = 'https://www.5movierulz.viajes/'
+        # Read domain from addon settings, default to .viajes
+        default_domain = 'https://www.5movierulz.viajes'
         domain = self.settings('mrulz_domain') or default_domain
         self.bu = domain + '/category/'
         self.icon = self.ipath + 'mrulz.png'
@@ -49,9 +57,10 @@ class mrulz(Scraper):
                      '42[COLOR cyan]Adult 18+[/COLOR]': self.bu + 'adult-18/',
                      '99[COLOR yellow]** Search **[/COLOR]': self.bu[:-9] + '?s='}
     
-    def make_raw_request(self, url, headers):
+    def make_raw_request(self, url, headers, retry_http=False):
         """Make a raw HTTP request with detailed error logging."""
-        self.log('[MRULZ] make_raw_request: Attempting raw urllib request to %s' % url)
+        protocol = "HTTP" if url.startswith('http://') else "HTTPS"
+        self.log('[MRULZ] make_raw_request: Attempting raw %s request to %s' % (protocol, url))
         try:
             req = urllib_request.Request(url)
             if headers:
@@ -73,6 +82,11 @@ class mrulz(Scraper):
                 return None
         except urllib_error.URLError as e:
             self.log('[MRULZ] make_raw_request: URLError - %s' % str(e.reason))
+            # If HTTPS fails with SSL error, try HTTP as fallback
+            if 'SSL' in str(e.reason) and url.startswith('https://') and not retry_http:
+                self.log('[MRULZ] make_raw_request: SSL error detected, retrying with HTTP...')
+                http_url = url.replace('https://', 'http://', 1)
+                return self.make_raw_request(http_url, headers, retry_http=True)
             return None
         except Exception as e:
             self.log('[MRULZ] make_raw_request: Unexpected error - %s: %s' % (type(e).__name__, str(e)))
@@ -81,6 +95,51 @@ class mrulz(Scraper):
     def get_menu(self):
         self.log('[MRULZ] get_menu: Called, returning %d categories' % len(self.list))
         return (self.list, 7, self.icon)
+
+    def fetch_html(self, url, hdr):
+        """Fetch HTML from URL with multiple fallback strategies. Returns (html, success_url)."""
+        self.log('[MRULZ] fetch_html: Fetching from %s' % url)
+        
+        # Try to get extended response info to diagnose issues
+        self.log('[MRULZ] fetch_html: Making HTTP request with cert verification (extended mode)...')
+        try:
+            response_data = client.request(url, headers=hdr, output='extended')
+            if response_data:
+                html, code, response_headers, request_headers, cookies, final_url = response_data
+                self.log('[MRULZ] fetch_html: HTTP response code: %s' % code)
+                self.log('[MRULZ] fetch_html: Response content length: %d bytes' % len(html) if html else '0')
+                if html:
+                    return (html, url)
+            else:
+                self.log('[MRULZ] fetch_html: Extended request returned None')
+        except Exception as e:
+            self.log('[MRULZ] fetch_html: Exception during extended request: %s' % str(e))
+        
+        # If standard request returns empty, try with SSL verification disabled
+        self.log('[MRULZ] fetch_html: First attempt returned empty, retrying with SSL verification disabled...')
+        hdr_no_verify = dict(hdr)
+        hdr_no_verify['verifypeer'] = 'false'
+        try:
+            response_data = client.request(url, headers=hdr_no_verify, output='extended')
+            if response_data:
+                html, code, response_headers, request_headers, cookies, final_url = response_data
+                self.log('[MRULZ] fetch_html: Retry HTTP response code: %s' % code)
+                self.log('[MRULZ] fetch_html: Retry response content length: %d bytes' % len(html) if html else '0')
+                if html:
+                    return (html, url)
+            else:
+                self.log('[MRULZ] fetch_html: Retry extended request returned None')
+        except Exception as e:
+            self.log('[MRULZ] fetch_html: Exception during retry request: %s' % str(e))
+        
+        # Third attempt: try raw urllib request with minimal setup to get diagnostic info
+        self.log('[MRULZ] fetch_html: Second attempt returned empty, trying raw urllib request for diagnostics...')
+        html = self.make_raw_request(url, hdr)
+        if html:
+            return (html, url)
+        
+        self.log('[MRULZ] fetch_html: FAILED - No HTML received after 3 attempts for %s' % url)
+        return (None, None)
 
     def get_items(self, url):
         self.log('[MRULZ] get_items: Called with URL: %s' % url)
@@ -95,51 +154,33 @@ class mrulz(Scraper):
         hdr = dict(self.hdr)
         hdr['Referer'] = self.bu
         
-        # Try to get extended response info to diagnose issues
-        self.log('[MRULZ] get_items: Making HTTP request with cert verification (extended mode)...')
-        try:
-            response_data = client.request(url, headers=hdr, output='extended')
-            if response_data:
-                html, code, response_headers, request_headers, cookies, final_url = response_data
-                self.log('[MRULZ] get_items: HTTP response code: %s' % code)
-                self.log('[MRULZ] get_items: Response content length: %d bytes' % len(html) if html else '0')
-                self.log('[MRULZ] get_items: Response headers: %s' % str(dict(response_headers)[:200]))  # Log first 200 chars of headers
-                if 'server' in response_headers:
-                    self.log('[MRULZ] get_items: Server header: %s' % response_headers['server'])
-            else:
-                html = None
-                self.log('[MRULZ] get_items: Extended request returned None')
-        except Exception as e:
-            self.log('[MRULZ] get_items: Exception during extended request: %s' % str(e))
-            html = None
+        # Try to fetch HTML from primary domain
+        html, success_url = self.fetch_html(url, hdr)
         
-        # If standard request returns empty, try with SSL verification disabled
-        # This handles misconfigured SSL certs and Cloudflare challenges
+        # If primary domain fails, try alternative domains
         if not html:
-            self.log('[MRULZ] get_items: First attempt returned empty, retrying with SSL verification disabled (extended mode)...')
-            hdr_no_verify = dict(hdr)
-            hdr_no_verify['verifypeer'] = 'false'
-            try:
-                response_data = client.request(url, headers=hdr_no_verify, output='extended')
-                if response_data:
-                    html, code, response_headers, request_headers, cookies, final_url = response_data
-                    self.log('[MRULZ] get_items: Retry HTTP response code: %s' % code)
-                    self.log('[MRULZ] get_items: Retry response content length: %d bytes' % len(html) if html else '0')
-                else:
-                    html = None
-                    self.log('[MRULZ] get_items: Retry extended request returned None')
-            except Exception as e:
-                self.log('[MRULZ] get_items: Exception during retry request: %s' % str(e))
-                html = None
-        
-        # Third attempt: try raw urllib request with minimal setup to get diagnostic info
-        if not html:
-            self.log('[MRULZ] get_items: Second attempt returned empty, trying raw urllib request for diagnostics...')
-            html = self.make_raw_request(url, hdr)
+            self.log('[MRULZ] get_items: Primary domain failed, trying alternative domains...')
+            primary_base = self.bu[:-9]  # Remove '/category/'
+            
+            for alt_domain in self.KNOWN_DOMAINS:
+                # Skip the domain we already tried
+                if alt_domain in primary_base:
+                    continue
+                
+                alt_url = url.replace(primary_base, alt_domain + '/', 1)
+                self.log('[MRULZ] get_items: Trying alternative domain: %s' % alt_url)
+                html, success_url = self.fetch_html(alt_url, hdr)
+                
+                if html:
+                    self.log('[MRULZ] get_items: SUCCESS with alternative domain: %s' % alt_domain)
+                    # Update base URL for consistency
+                    self.bu = alt_domain + '/category/'
+                    break
         
         if not html:
-            self.log('[MRULZ] get_items: ERROR - No HTML received from server after 3 attempts!')
-            self.log('[MRULZ] get_items: This may be due to Cloudflare bot detection or domain blocking.')
+            self.log('[MRULZ] get_items: ERROR - No HTML received from any domain!')
+            self.log('[MRULZ] get_items: Issue may be Cloudflare bot detection, SSL errors, or domain unavailability.')
+            self.log('[MRULZ] get_items: Try changing domain in addon settings: Settings → Movie Rulz Settings')
             return (movies, 8)
         
         self.log('[MRULZ] get_items: Parsing HTML with BeautifulSoup...')
