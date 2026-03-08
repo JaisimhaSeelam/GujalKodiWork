@@ -204,13 +204,39 @@ class mrulz(Scraper):
                 thumb = self.icon
             movies.append((title, thumb, url))
 
-        if 'Older' in str(Paginator):
-            nextli = Paginator.find('div', {'class': 'nav-older'})
-            purl = nextli.find('a')['href']
-            pages = purl.split('/')
-            currpg = int(pages[len(pages) - 2]) - 1
-            title = 'Next Page.. (Currently in Page {})'.format(currpg)
-            movies.append((title, self.nicon, purl))
+        # Handle pagination
+        self.log('[MRULZ] get_items: Checking for pagination (Paginator str length: %d)' % len(str(Paginator)))
+        paginator_str = str(Paginator)
+        self.log('[MRULZ] get_items: Paginator HTML snippet (first 500 chars): %s' % paginator_str[:500])
+        
+        if 'Older' in paginator_str:
+            self.log('[MRULZ] get_items: Found "Older" text in paginator')
+            try:
+                nextli = Paginator.find('div', {'class': 'nav-older'})
+                if nextli:
+                    plink_elem = nextli.find('a')
+                    if plink_elem:
+                        purl = plink_elem['href']
+                        pages = purl.split('/')
+                        currpg = int(pages[len(pages) - 2]) - 1
+                        title = 'Next Page.. (Currently in Page {})'.format(currpg)
+                        movies.append((title, self.nicon, purl))
+                        self.log('[MRULZ] get_items: Added next page link: %s' % purl)
+                    else:
+                        self.log('[MRULZ] get_items: Found nav-older div but no <a> tag inside')
+                else:
+                    self.log('[MRULZ] get_items: Could not find div with class "nav-older"')
+            except Exception as e:
+                self.log('[MRULZ] get_items: Exception processing pagination: %s' % str(e))
+        else:
+            self.log('[MRULZ] get_items: "Older" text not found in paginator - no next page link')
+            # Try alternative pagination structures
+            self.log('[MRULZ] get_items: Looking for alternative pagination elements...')
+            nav_elem = Paginator.find('nav')
+            if nav_elem:
+                self.log('[MRULZ] get_items: Found nav element, contents: %s' % str(nav_elem)[:200])
+            else:
+                self.log('[MRULZ] get_items: No nav element found at all')
 
         return (movies, 8)
 
