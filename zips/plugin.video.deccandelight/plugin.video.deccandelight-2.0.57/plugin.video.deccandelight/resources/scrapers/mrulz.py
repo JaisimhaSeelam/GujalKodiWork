@@ -186,8 +186,7 @@ class mrulz(Scraper):
         self.log('[MRULZ] get_items: Parsing HTML with BeautifulSoup...')
         mlink = SoupStrainer('div', {'id': 'content'})
         mdiv = BeautifulSoup(html, "html.parser", parse_only=mlink)
-        plink = SoupStrainer('nav', {'id': 'posts-nav'})
-        Paginator = BeautifulSoup(html, "html.parser", parse_only=plink)
+        soup = BeautifulSoup(html, "html.parser")
         items = mdiv.find_all('div', {'class': 'boxed film'})
         
         self.log('[MRULZ] get_items: Found %d movie items' % len(items))
@@ -204,39 +203,49 @@ class mrulz(Scraper):
                 thumb = self.icon
             movies.append((title, thumb, url))
 
-        # Handle pagination
-        self.log('[MRULZ] get_items: Checking for pagination (Paginator str length: %d)' % len(str(Paginator)))
-        paginator_str = str(Paginator)
-        self.log('[MRULZ] get_items: Paginator HTML snippet (first 500 chars): %s' % paginator_str[:500])
-        
-        if 'Older' in paginator_str:
-            self.log('[MRULZ] get_items: Found "Older" text in paginator')
-            try:
-                nextli = Paginator.find('div', {'class': 'nav-older'})
-                if nextli:
-                    plink_elem = nextli.find('a')
-                    if plink_elem:
-                        purl = plink_elem['href']
-                        pages = purl.split('/')
-                        currpg = int(pages[len(pages) - 2]) - 1
-                        title = 'Next Page.. (Currently in Page {})'.format(currpg)
-                        movies.append((title, self.nicon, purl))
-                        self.log('[MRULZ] get_items: Added next page link: %s' % purl)
-                    else:
-                        self.log('[MRULZ] get_items: Found nav-older div but no <a> tag inside')
-                else:
-                    self.log('[MRULZ] get_items: Could not find div with class "nav-older"')
-            except Exception as e:
-                self.log('[MRULZ] get_items: Exception processing pagination: %s' % str(e))
-        else:
-            self.log('[MRULZ] get_items: "Older" text not found in paginator - no next page link')
-            # Try alternative pagination structures
-            self.log('[MRULZ] get_items: Looking for alternative pagination elements...')
-            nav_elem = Paginator.find('nav')
-            if nav_elem:
-                self.log('[MRULZ] get_items: Found nav element, contents: %s' % str(nav_elem)[:200])
+        # Handle pagination across old and new mirror layouts.
+        next_url = None
+        paginator = None
+        try:
+            paginator = soup.find('div', {'class': re.compile(r'\bpagination\b')})
+            if not paginator:
+                paginator = soup.find('div', {'class': re.compile(r'\bwp-pagenavi\b')})
+            if not paginator:
+                paginator = soup.find('nav', {'id': 'posts-nav'})
+
+            if paginator:
+                self.log('[MRULZ] get_items: Found paginator block (first 300 chars): %s' % str(paginator)[:300])
+
+                next_link = paginator.find('a', {'rel': 'next'})
+                if not next_link:
+                    next_link = paginator.find('a', {'class': re.compile(r'\b(next|nextpostslink)\b')})
+                if not next_link:
+                    next_link = paginator.find('a', string=re.compile(r'(Next|Older|»)', re.I))
+
+                if next_link:
+                    next_url = next_link.get('href')
             else:
-                self.log('[MRULZ] get_items: No nav element found at all')
+                self.log('[MRULZ] get_items: No dedicated paginator block found, trying global next-link fallback')
+
+            if not next_url:
+                next_link = soup.find('a', {'rel': 'next'})
+                if not next_link:
+                    next_link = soup.find('a', string=re.compile(r'(Next|Older|»)', re.I))
+                if next_link:
+                    next_url = next_link.get('href')
+
+            if next_url:
+                currpg = 1
+                m = re.search(r'/page/(\d+)', url)
+                if m:
+                    currpg = int(m.group(1))
+                title = 'Next Page.. (Currently in Page {})'.format(currpg)
+                movies.append((title, self.nicon, next_url))
+                self.log('[MRULZ] get_items: Added next page link: %s' % next_url)
+            else:
+                self.log('[MRULZ] get_items: No next page link detected')
+        except Exception as e:
+            self.log('[MRULZ] get_items: Exception processing pagination: %s' % str(e))
 
         return (movies, 8)
 
