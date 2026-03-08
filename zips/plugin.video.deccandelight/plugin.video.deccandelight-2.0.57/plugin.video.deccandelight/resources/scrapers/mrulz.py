@@ -17,10 +17,11 @@ along with this program. If not, see <http://www.gnu.org/licenses/>.
 '''
 import json
 import re
+import sys
 from bs4 import BeautifulSoup, SoupStrainer
 from resources.lib import client
 from resources.lib.base import Scraper
-from six.moves import urllib_parse
+from six.moves import urllib_parse, urllib_request, urllib_error
 
 
 class mrulz(Scraper):
@@ -47,6 +48,35 @@ class mrulz(Scraper):
                      '41[COLOR cyan]Adult Movies[/COLOR]': self.bu + 'adult-movie/',
                      '42[COLOR cyan]Adult 18+[/COLOR]': self.bu + 'adult-18/',
                      '99[COLOR yellow]** Search **[/COLOR]': self.bu[:-9] + '?s='}
+    
+    def make_raw_request(self, url, headers):
+        """Make a raw HTTP request with detailed error logging."""
+        self.log('[MRULZ] make_raw_request: Attempting raw urllib request to %s' % url)
+        try:
+            req = urllib_request.Request(url)
+            if headers:
+                for key, value in headers.items():
+                    req.add_header(key, value)
+            response = urllib_request.urlopen(req, timeout=20)
+            html = response.read()
+            response.close()
+            self.log('[MRULZ] make_raw_request: SUCCESS - Got %d bytes' % len(html))
+            return html.decode('utf-8', errors='ignore') if isinstance(html, bytes) else html
+        except urllib_error.HTTPError as e:
+            self.log('[MRULZ] make_raw_request: HTTPError %d - %s' % (e.code, e.reason))
+            self.log('[MRULZ] make_raw_request: Error headers: %s' % str(e.headers))
+            try:
+                content = e.read()
+                self.log('[MRULZ] make_raw_request: Error body length: %d bytes' % len(content))
+                return content.decode('utf-8', errors='ignore') if isinstance(content, bytes) else content
+            except:
+                return None
+        except urllib_error.URLError as e:
+            self.log('[MRULZ] make_raw_request: URLError - %s' % str(e.reason))
+            return None
+        except Exception as e:
+            self.log('[MRULZ] make_raw_request: Unexpected error - %s: %s' % (type(e).__name__, str(e)))
+            return None
 
     def get_menu(self):
         self.log('[MRULZ] get_menu: Called, returning %d categories' % len(self.list))
@@ -65,22 +95,50 @@ class mrulz(Scraper):
         hdr = dict(self.hdr)
         hdr['Referer'] = self.bu
         
-        self.log('[MRULZ] get_items: Making HTTP request with cert verification...')
-        html = client.request(url, headers=hdr)
-        self.log('[MRULZ] get_items: HTTP request completed')
-        self.log('[MRULZ] get_items: HTML response length: %d bytes' % len(html) if html else 'None')
+        # Try to get extended response info to diagnose issues
+        self.log('[MRULZ] get_items: Making HTTP request with cert verification (extended mode)...')
+        try:
+            response_data = client.request(url, headers=hdr, output='extended')
+            if response_data:
+                html, code, response_headers, request_headers, cookies, final_url = response_data
+                self.log('[MRULZ] get_items: HTTP response code: %s' % code)
+                self.log('[MRULZ] get_items: Response content length: %d bytes' % len(html) if html else '0')
+                self.log('[MRULZ] get_items: Response headers: %s' % str(dict(response_headers)[:200]))  # Log first 200 chars of headers
+                if 'server' in response_headers:
+                    self.log('[MRULZ] get_items: Server header: %s' % response_headers['server'])
+            else:
+                html = None
+                self.log('[MRULZ] get_items: Extended request returned None')
+        except Exception as e:
+            self.log('[MRULZ] get_items: Exception during extended request: %s' % str(e))
+            html = None
         
         # If standard request returns empty, try with SSL verification disabled
         # This handles misconfigured SSL certs and Cloudflare challenges
         if not html:
-            self.log('[MRULZ] get_items: First attempt returned empty, retrying with SSL verification disabled...')
+            self.log('[MRULZ] get_items: First attempt returned empty, retrying with SSL verification disabled (extended mode)...')
             hdr_no_verify = dict(hdr)
             hdr_no_verify['verifypeer'] = 'false'
-            html = client.request(url, headers=hdr_no_verify)
-            self.log('[MRULZ] get_items: Second attempt response length: %d bytes' % len(html) if html else 'None')
+            try:
+                response_data = client.request(url, headers=hdr_no_verify, output='extended')
+                if response_data:
+                    html, code, response_headers, request_headers, cookies, final_url = response_data
+                    self.log('[MRULZ] get_items: Retry HTTP response code: %s' % code)
+                    self.log('[MRULZ] get_items: Retry response content length: %d bytes' % len(html) if html else '0')
+                else:
+                    html = None
+                    self.log('[MRULZ] get_items: Retry extended request returned None')
+            except Exception as e:
+                self.log('[MRULZ] get_items: Exception during retry request: %s' % str(e))
+                html = None
+        
+        # Third attempt: try raw urllib request with minimal setup to get diagnostic info
+        if not html:
+            self.log('[MRULZ] get_items: Second attempt returned empty, trying raw urllib request for diagnostics...')
+            html = self.make_raw_request(url, hdr)
         
         if not html:
-            self.log('[MRULZ] get_items: ERROR - No HTML received from server after 2 attempts!')
+            self.log('[MRULZ] get_items: ERROR - No HTML received from server after 3 attempts!')
             self.log('[MRULZ] get_items: This may be due to Cloudflare bot detection or domain blocking.')
             return (movies, 8)
         
